@@ -9,6 +9,7 @@
 
     <!-- Javascripts -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html-ui.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 
     <!-- Add the missing Diff library with the correct export -->
@@ -186,6 +187,109 @@
             text-decoration: none;
             cursor: pointer;
         }
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: border-color 0.3s;
+            margin-bottom: 15px;
+            background-color: #f9f9f9;
+        }
+        .drop-zone:hover {
+            border-color: #3498db;
+        }
+        .drop-zone.active {
+            border-color: #2ecc71;
+            background-color: rgba(46, 204, 113, 0.1);
+        }
+        .file-list {
+            margin-top: 10px;
+            margin-bottom: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            background-color: #f9f9f9;
+        }
+        .file-item:hover {
+            background-color: #f1f1f1;
+        }
+        .file-item.active {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-name {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+        .file-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .file-status {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-right: 10px;
+        }
+        .status-pending {
+            background-color: #ffeaa7;
+            color: #d35400;
+        }
+        .status-processing {
+            background-color: #81ecec;
+            color: #00505c;
+        }
+        .status-processed {
+            background-color: #55efc4;
+            color: #005c4c;
+        }
+        .status-error {
+            background-color: #fab1a0;
+            color: #c0392b;
+        }
+        .batch-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .batch-progress {
+            margin-top: 10px;
+            display: none;
+        }
+        .progress-bar {
+            height: 10px;
+            background-color: #f1f1f1;
+            border-radius: 5px;
+            margin-bottom: 5px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #3498db;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            font-size: 12px;
+            text-align: center;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -207,9 +311,30 @@
     <div class="container">
         <div class="input-section">
             <h2>Input</h2>
-            <div class="file-input">
-                <label for="latexFile">Upload LaTeX file:</label>
-                <input type="file" id="latexFile" accept=".tex">
+            <!-- New drag and drop zone -->
+            <div class="drop-zone" id="dropZone">
+                <p>Drag & drop LaTeX files here or click to upload</p>
+                <input type="file" id="latexFile" accept=".tex" multiple style="display: none;">
+            </div>
+
+            <!-- Batch actions -->
+            <div class="batch-actions">
+                <button id="formatAllBtn">Format All Files</button>
+                <button id="downloadAllBtn" disabled>Download All</button>
+                <button id="clearAllBtn">Clear All</button>
+            </div>
+
+            <!-- Progress bar for batch processing -->
+            <div class="batch-progress" id="batchProgress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Processing 0/0 files...</div>
+            </div>
+
+            <!-- File list -->
+            <div class="file-list" id="fileList">
+                <!-- File items will be added here dynamically -->
             </div>
             <div class="api-key-input">
                 <label for="apiKey">Gemini API Key:</label>
@@ -302,6 +427,19 @@
             const saveSettingsBtn = document.getElementById('saveSettingsBtn');
             const resetSettingsBtn = document.getElementById('resetSettingsBtn');
             const formatInstructions = document.getElementById('formatInstructions');
+
+            const formatAllBtn = document.getElementById('formatAllBtn');
+            const clearAllBtn = document.getElementById('clearAllBtn');
+            const dropZone = document.getElementById('dropZone');
+            const fileList = document.getElementById('fileList');
+            const batchProgress = document.getElementById('batchProgress');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+            const files = [];
+            let activeFileId = null;
+            let batchProcessing = false;
             
             // Load API key from localStorage if available
             if (localStorage.getItem('geminiApiKey')) {
@@ -364,6 +502,42 @@
                     copyOriginalBtn.textContent = 'Copy to Clipboard';
                 }, 2000);
             });
+            // File upload handling
+            dropZone.addEventListener('click', () => {
+                latexFile.click();
+            });
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('active');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('active');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('active');
+                
+                if (e.dataTransfer.files.length > 0) {
+                    Array.from(e.dataTransfer.files).forEach(file => {
+                        if (file.name.endsWith('.tex')) {
+                            addFile(file);
+                        }
+                    });
+                }
+            });
+
+            latexFile.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    Array.from(e.target.files).forEach(file => {
+                        if (file.name.endsWith('.tex')) {
+                            addFile(file);
+                        }
+                    });
+                }
+            });
 
             // Tab switching functionality
             tabs.forEach(tab => {
@@ -390,56 +564,47 @@
             });
             
             // Format button click handler
-            formatBtn.addEventListener('click', async () => {
-                const apiKey = apiKeyInput.value.trim();
-                const latexContent = latexInput.value.trim();
-                const selectedModel = modelSelect.value;
-                
-                if (!apiKey) {
-                    showError("Please enter a Gemini API Key");
-                    return;
+            formatBtn.addEventListener('click', () => {
+                if (activeFileId) {
+                    formatCurrentFile();
+                } else {
+                    // Handle manual input case (no file selected)
+                    const content = latexInput.value.trim();
+                    if (!content) {
+                        showError("Please enter some LaTeX content");
+                        return;
+                    }
+                    
+                    // Create a temporary file
+                    const fileId = 'file-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+                    const fileObj = {
+                        id: fileId,
+                        name: 'Manual Input',
+                        originalContent: content,
+                        formattedContent: null,
+                        status: 'pending',
+                        errorMessage: null
+                    };
+                    
+                    files.push(fileObj);
+                    activeFileId = fileId;
+                    renderFileList();
+                    formatCurrentFile();
                 }
-                
-                if (!latexContent) {
-                    showError("Please upload a file or paste LaTeX content");
-                    return;
-                }
-                
-                // Save API key and model to localStorage
-                localStorage.setItem('geminiApiKey', apiKey);
-                localStorage.setItem('geminiModel', selectedModel);
-                
-                // Show loading spinner
-                loading.style.display = 'block';
-                formatBtn.disabled = true;
-                errorMessage.style.display = 'none';
-                
-                try {
-                    // Store original content
-                    originalOutput.value = latexContent;
-                    
-                    // Format content with Gemini API
-                    const formattedContent = await formatWithGemini(latexContent, apiKey, selectedModel);
-                    
-                    // Display formatted content
-                    formattedOutput.value = formattedContent;
-                    
-                    // Generate and display diff
-                    generateDiff(latexContent, formattedContent);
-                    
-                    // Switch to diff tab
-                    tabs.forEach(t => t.classList.remove('active'));
-                    tabContents.forEach(c => c.classList.remove('active'));
-                    document.querySelector('[data-tab="diff"]').classList.add('active');
-                    document.getElementById('diff-content').classList.add('active');
-                } catch (error) {
-                    showError(`Error: ${error.message}`);
-                    console.error(error);
-                } finally {
-                    // Hide loading spinner
-                    loading.style.display = 'none';
-                    formatBtn.disabled = false;
-                }
+            });
+
+            // Format All button click handler
+            formatAllBtn.addEventListener('click', formatAllFiles);
+
+            // Clear All button click handler
+            clearAllBtn.addEventListener('click', () => {
+                files.length = 0;
+                activeFileId = null;
+                latexInput.value = '';
+                formattedOutput.value = '';
+                originalOutput.value = '';
+                diffOutput.innerHTML = '';
+                renderFileList();
             });
             
             // Clear button click handler
@@ -451,6 +616,8 @@
                 latexFile.value = '';
                 errorMessage.style.display = 'none';
             });
+            // Download All button click handler
+            downloadAllBtn.addEventListener('click', downloadAllFiles);
             
             // Helper function to format with Gemini API
             async function formatWithGemini(content, apiKey, model) {
@@ -525,6 +692,288 @@
             function showError(message) {
                 errorMessage.textContent = message;
                 errorMessage.style.display = 'block';
+            }
+            // File handling functions
+            function addFile(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const fileId = 'file-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+                    const fileObj = {
+                        id: fileId,
+                        name: file.name,
+                        originalContent: e.target.result,
+                        formattedContent: null,
+                        status: 'pending',
+                        errorMessage: null
+                    };
+                    
+                    files.push(fileObj);
+                    renderFileList();
+                    
+                    // If it's the first file, make it active
+                    if (files.length === 1) {
+                        setActiveFile(fileId);
+                    }
+                };
+                reader.readAsText(file);
+            }
+
+            function renderFileList() {
+                fileList.innerHTML = '';
+                
+                if (files.length === 0) {
+                    fileList.innerHTML = '<div class="file-item"><em>No files added yet</em></div>';
+                    return;
+                }
+                
+                files.forEach(file => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = `file-item ${file.id === activeFileId ? 'active' : ''}`;
+                    fileItem.dataset.fileId = file.id;
+                    
+                    let statusClass = '';
+                    switch (file.status) {
+                        case 'pending': statusClass = 'status-pending'; break;
+                        case 'processing': statusClass = 'status-processing'; break;
+                        case 'processed': statusClass = 'status-processed'; break;
+                        case 'error': statusClass = 'status-error'; break;
+                    }
+                    
+                    fileItem.innerHTML = `
+                        <div class="file-name">${file.name}</div>
+                        <span class="file-status ${statusClass}">${file.status}</span>
+                        <div class="file-actions">
+                            ${file.status === 'pending' ? '<button class="format-file-btn">Format</button>' : ''}
+                            <button class="remove-file-btn">Remove</button>
+                        </div>
+                    `;
+                    
+                    fileList.appendChild(fileItem);
+                    
+                    // Add event listeners
+                    fileItem.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('format-file-btn') && 
+                            !e.target.classList.contains('remove-file-btn')) {
+                            setActiveFile(file.id);
+                        }
+                    });
+                    
+                    const formatFileBtn = fileItem.querySelector('.format-file-btn');
+                    if (formatFileBtn) {
+                        formatFileBtn.addEventListener('click', () => {
+                            setActiveFile(file.id);
+                            formatCurrentFile();
+                        });
+                    }
+                    
+                    const removeFileBtn = fileItem.querySelector('.remove-file-btn');
+                    if (removeFileBtn) {
+                        removeFileBtn.addEventListener('click', () => {
+                            removeFile(file.id);
+                        });
+                    }
+                });
+                // Enable/disable download button based on processed files
+                const hasProcessedFiles = files.some(file => file.status === 'processed');
+                downloadAllBtn.disabled = !hasProcessedFiles;
+            }
+
+            function setActiveFile(fileId) {
+                activeFileId = fileId;
+                const file = files.find(f => f.id === fileId);
+                
+                if (file) {
+                    // Update UI elements
+                    latexInput.value = file.originalContent;
+                    originalOutput.value = file.originalContent;
+                    formattedOutput.value = file.formattedContent || '';
+                    
+                    // Update diff view if formatted content exists
+                    if (file.formattedContent) {
+                        generateDiff(file.originalContent, file.formattedContent);
+                    } else {
+                        diffOutput.innerHTML = '';
+                    }
+                    
+                    // Update file list highlight
+                    renderFileList();
+                }
+            }
+
+            function removeFile(fileId) {
+                const fileIndex = files.findIndex(f => f.id === fileId);
+                
+                if (fileIndex !== -1) {
+                    files.splice(fileIndex, 1);
+                    
+                    // If the active file was removed, set a new active file
+                    if (fileId === activeFileId) {
+                        if (files.length > 0) {
+                            setActiveFile(files[0].id);
+                        } else {
+                            activeFileId = null;
+                            latexInput.value = '';
+                            originalOutput.value = '';
+                            formattedOutput.value = '';
+                            diffOutput.innerHTML = '';
+                        }
+                    }
+                    
+                    renderFileList();
+                }
+            }
+
+            async function formatCurrentFile() {
+                if (!activeFileId) return;
+                
+                const file = files.find(f => f.id === activeFileId);
+                if (!file) return;
+                
+                const apiKey = apiKeyInput.value.trim();
+                if (!apiKey) {
+                    showError("Please enter a Gemini API Key");
+                    return;
+                }
+                
+                // Update file status
+                file.status = 'processing';
+                renderFileList();
+                
+                // Show loading spinner if not batch processing
+                if (!batchProcessing) {
+                    loading.style.display = 'block';
+                    formatBtn.disabled = true;
+                    errorMessage.style.display = 'none';
+                }
+                
+                try {
+                    // Format content with Gemini API
+                    const formattedContent = await formatWithGemini(file.originalContent, apiKey, modelSelect.value);
+                    
+                    // Update file with formatted content
+                    file.formattedContent = formattedContent;
+                    file.status = 'processed';
+                    
+                    // Update UI if this is the active file
+                    if (file.id === activeFileId) {
+                        originalOutput.value = file.originalContent;
+                        formattedOutput.value = formattedContent;
+                        generateDiff(file.originalContent, formattedContent);
+                        
+                        // Switch to diff tab
+                        tabs.forEach(t => t.classList.remove('active'));
+                        tabContents.forEach(c => c.classList.remove('active'));
+                        document.querySelector('[data-tab="diff"]').classList.add('active');
+                        document.getElementById('diff-content').classList.add('active');
+                    }
+                } catch (error) {
+                    file.status = 'error';
+                    file.errorMessage = error.message;
+                    showError(`Error formatting ${file.name}: ${error.message}`);
+                    console.error(error);
+                } finally {
+                    // Update file list
+                    renderFileList();
+                    
+                    // Hide loading spinner if not batch processing
+                    if (!batchProcessing) {
+                        loading.style.display = 'none';
+                        formatBtn.disabled = false;
+                    }
+                }
+                
+                return file.status === 'processed';
+            }
+
+            async function formatAllFiles() {
+                const apiKey = apiKeyInput.value.trim();
+                if (!apiKey) {
+                    showError("Please enter a Gemini API Key");
+                    return;
+                }
+                
+                if (files.length === 0) {
+                    showError("No files to format");
+                    return;
+                }
+                
+                // Start batch processing
+                batchProcessing = true;
+                let processedCount = 0;
+                const totalCount = files.filter(f => f.status === 'pending').length;
+                
+                if (totalCount === 0) {
+                    showError("No pending files to format");
+                    batchProcessing = false;
+                    return;
+                }
+                
+                // Show progress bar
+                batchProgress.style.display = 'block';
+                formatAllBtn.disabled = true;
+                
+                try {
+                    for (const file of files) {
+                        if (file.status === 'pending') {
+                            // Set as active file
+                            setActiveFile(file.id);
+                            
+                            // Format file
+                            await formatCurrentFile();
+                            
+                            // Update progress
+                            processedCount++;
+                            const progress = (processedCount / totalCount) * 100;
+                            progressFill.style.width = `${progress}%`;
+                            progressText.textContent = `Processing ${processedCount}/${totalCount} files...`;
+                        }
+                    }
+                } finally {
+                    // End batch processing
+                    batchProcessing = false;
+                    formatAllBtn.disabled = false;
+                    
+                    // Hide progress bar after a short delay
+                    setTimeout(() => {
+                        batchProgress.style.display = 'none';
+                    }, 2000);
+                }
+            }
+            // Function to download all formatted files as a zip
+            async function downloadAllFiles() {
+                // Check if there are any processed files
+                const processedFiles = files.filter(file => file.status === 'processed');
+                
+                if (processedFiles.length === 0) {
+                    showError("No processed files to download");
+                    return;
+                }
+                
+                try {
+                    // Create a new JSZip instance
+                    const zip = new JSZip();
+                    
+                    // Add each formatted file to the zip
+                    processedFiles.forEach(file => {
+                        zip.file(file.name, file.formattedContent);
+                    });
+                    
+                    // Generate the zip file
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    
+                    // Create a download link
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = URL.createObjectURL(zipBlob);
+                    downloadLink.download = 'formatted_latex_files.zip';
+                    
+                    // Trigger the download
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                } catch (error) {
+                    showError(`Error creating download: ${error.message}`);
+                    console.error(error);
+                }
             }
         });
     </script>
