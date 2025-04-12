@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaTeX Formatter</title>
+    <!-- CSS -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css" />
+
+    <!-- Javascripts -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html-ui.min.js"></script>
+
+
+    <!-- Add the missing Diff library with the correct export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/4.0.2/diff.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/diff2html/3.4.35/diff2html.min.css">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .input-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .file-input {
+            margin-bottom: 15px;
+        }
+        .api-key-input {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .api-key-input input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .output-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .tab-container {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f1f1f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-top: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .loading {
+            text-align: center;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #3498db;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #errorMessage {
+            color: red;
+            margin-top: 10px;
+            display: none;
+        }
+        .model-selection {
+            margin-bottom: 15px;
+        }
+        .copy-button {
+            padding: 5px 10px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>LaTeX Formatter</h1>
+    
+    <div class="container">
+        <div class="input-section">
+            <h2>Input</h2>
+            <div class="file-input">
+                <label for="latexFile">Upload LaTeX file:</label>
+                <input type="file" id="latexFile" accept=".tex">
+            </div>
+            <div class="api-key-input">
+                <label for="apiKey">Gemini API Key:</label>
+                <input type="password" id="apiKey" placeholder="Enter your Gemini API Key">
+            </div>
+            <div class="model-selection">
+                <label for="modelSelect">Gemini Model:</label>
+                <select id="modelSelect">
+                    <option value="gemini-2.0-flash">gemini-2.0-flash (Fast)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro (Powerful)</option>
+                </select>
+            </div>
+            <textarea id="latexInput" placeholder="Or paste your LaTeX content here..."></textarea>
+            <div id="errorMessage"></div>
+        </div>
+        
+        <div class="button-container">
+            <button id="formatBtn">Format with Gemini</button>
+            <button id="clearBtn">Clear</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing your request...</p>
+        </div>
+        
+        <div class="output-section">
+            <h2>Output</h2>
+            <div class="tab-container">
+                <div class="tab active" data-tab="diff">Diff View</div>
+                <div class="tab" data-tab="formatted">Formatted LaTeX</div>
+                <div class="tab" data-tab="original">Original LaTeX</div>
+            </div>
+            
+            <div class="tab-content active" id="diff-content">
+                <div id="diffOutput"></div>
+            </div>
+            
+            <div class="tab-content" id="formatted-content">
+                <button id="copyFormattedBtn" class="copy-button">Copy to Clipboard</button>
+                <textarea id="formattedOutput" readonly></textarea>
+            </div>
+            
+            <div class="tab-content" id="original-content">
+                <button id="copyOriginalBtn" class="copy-button">Copy to Clipboard</button>
+                <textarea id="originalOutput" readonly></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Format guidelines
+        const formatGuidelines = `
+        Glavno pravilo - spoštuj formatiranje, ki je že v besedilu. Ne dodajaj razlag, samo formatiraj.
+        Tekst je lahko hkrati poudarjen in ležeč.
+| Syntax | Description |
+|--------|-------------|
+| \\textsc{"protocol"} | Protokoli se pišejo z malimi črkami z ukazom za male velike črke (udp, tcp, dns...) |
+| \\emph{"emphasized word"} | Poudarjene besede so zapisane z ukazom za poudarjanje (sporočilo, geslo, kontrolna vsota glave) |
+| \\textit{"translation or explanation"} | Angleški prevodi in razlage okrajšav so zapisane z ukazom za ležeče črke (duplication, multicast, Domain Name System...) |
+| number | Številke so napisane z običajnim besedilom (1, 67, 113...) |
+| $$"equation"$$ | Enačbe in izračuni so zapisani z ukazom za enačbe (a + b = 1, x² + x + 1 = 0, e = mc²...) |
+| \\code{"command"} | Ukazi in kratka programska koda znotraj besedila je zapisana z ukazom za programsko kodo (snmpwalk, if a > 1, echo "Test"...) |
+| \\begin{lstlisting}"command"\\end{lstlisting} | Ukazi in kratka programska koda izven besedila je zapisana z ukazom za programsko kodo (snmpwalk, if a > 1, echo "Test"...) |
+| \\texttt{"ip, url or file name"} | Naslovi IP, URL-ji, imena datotek so zapisani z ukazom za tipkarske črke (192.168.1.1, www.example.com, dhcpd.conf) |
+        `;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const latexInput = document.getElementById('latexInput');
+            const formatBtn = document.getElementById('formatBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const latexFile = document.getElementById('latexFile');
+            const formattedOutput = document.getElementById('formattedOutput');
+            const originalOutput = document.getElementById('originalOutput');
+            const diffOutput = document.getElementById('diffOutput');
+            const apiKeyInput = document.getElementById('apiKey');
+            const modelSelect = document.getElementById('modelSelect');
+            const loading = document.getElementById('loading');
+            const errorMessage = document.getElementById('errorMessage');
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+            const copyFormattedBtn = document.getElementById('copyFormattedBtn');
+            const copyOriginalBtn = document.getElementById('copyOriginalBtn');
+
+            const targetElement = document.getElementById('diffOutput');
+
+            
+            // Load API key from localStorage if available
+            if (localStorage.getItem('geminiApiKey')) {
+                apiKeyInput.value = localStorage.getItem('geminiApiKey');
+            }
+            
+            // Load selected model from localStorage if available
+            if (localStorage.getItem('geminiModel')) {
+                modelSelect.value = localStorage.getItem('geminiModel');
+            }
+
+            // Copy buttons
+            copyFormattedBtn.addEventListener('click', () => {
+                formattedOutput.select();
+                document.execCommand('copy');
+                copyFormattedBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyFormattedBtn.textContent = 'Copy to Clipboard';
+                }, 2000);
+            });
+
+            copyOriginalBtn.addEventListener('click', () => {
+                originalOutput.select();
+                document.execCommand('copy');
+                copyOriginalBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyOriginalBtn.textContent = 'Copy to Clipboard';
+                }, 2000);
+            });
+
+            // Tab switching functionality
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(c => c.classList.remove('active'));
+                    
+                    tab.classList.add('active');
+                    const tabId = tab.getAttribute('data-tab');
+                    document.getElementById(`${tabId}-content`).classList.add('active');
+                });
+            });
+            
+            // Handle file upload
+            latexFile.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        latexInput.value = e.target.result;
+                    };
+                    reader.readAsText(file);
+                }
+            });
+            
+            // Format button click handler
+            formatBtn.addEventListener('click', async () => {
+                const apiKey = apiKeyInput.value.trim();
+                const latexContent = latexInput.value.trim();
+                const selectedModel = modelSelect.value;
+                
+                if (!apiKey) {
+                    showError("Please enter a Gemini API Key");
+                    return;
+                }
+                
+                if (!latexContent) {
+                    showError("Please upload a file or paste LaTeX content");
+                    return;
+                }
+                
+                // Save API key and model to localStorage
+                localStorage.setItem('geminiApiKey', apiKey);
+                localStorage.setItem('geminiModel', selectedModel);
+                
+                // Show loading spinner
+                loading.style.display = 'block';
+                formatBtn.disabled = true;
+                errorMessage.style.display = 'none';
+                
+                try {
+                    // Store original content
+                    originalOutput.value = latexContent;
+                    
+                    // Format content with Gemini API
+                    const formattedContent = await formatWithGemini(latexContent, apiKey, selectedModel);
+                    
+                    // Display formatted content
+                    formattedOutput.value = formattedContent;
+                    
+                    // Generate and display diff
+                    generateDiff(latexContent, formattedContent);
+                    
+                    // Switch to diff tab
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(c => c.classList.remove('active'));
+                    document.querySelector('[data-tab="diff"]').classList.add('active');
+                    document.getElementById('diff-content').classList.add('active');
+                } catch (error) {
+                    showError(`Error: ${error.message}`);
+                    console.error(error);
+                } finally {
+                    // Hide loading spinner
+                    loading.style.display = 'none';
+                    formatBtn.disabled = false;
+                }
+            });
+            
+            // Clear button click handler
+            clearBtn.addEventListener('click', () => {
+                latexInput.value = '';
+                formattedOutput.value = '';
+                originalOutput.value = '';
+                diffOutput.innerHTML = '';
+                latexFile.value = '';
+                errorMessage.style.display = 'none';
+            });
+            
+            // Helper function to format with Gemini API
+            async function formatWithGemini(content, apiKey, model) {
+                const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+                
+                const prompt = `
+                Please format the following LaTeX content according to these guidelines:
+                
+                ${formatGuidelines}
+                
+                Here is the LaTeX content to format:
+                
+                ${content}
+                
+                Please provide only the formatted LaTeX content without any additional explanations or comments. Do not include code blocks or any other formatting. Just provide the plain LaTeX code.
+                Do not modify the content and add explanations for terms - only format it.
+                Do not remove emphasts - text can be emphasized and italicized at the same time.
+                Make sure to follow the guidelines strictly.
+                `;
+                
+                const response = await fetch(`${API_URL}?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: prompt
+                            }]
+                        }],
+                        generationConfig: {
+                            temperature: 0.2,
+                            topK: 40,
+                            topP: 0.95,
+                            maxOutputTokens: 8192
+                        }
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API Error: ${errorData.error?.message || 'Unknown error'}`);
+                }
+                
+                const data = await response.json();
+                const formattedText = data.candidates[0]?.content?.parts?.[0]?.text;
+                
+                if (!formattedText) {
+                    throw new Error('No formatted content received from the API');
+                }
+                
+                return formattedText;
+            }
+            
+            // Helper function to generate diff
+            function generateDiff(original, formatted) {
+                // Using diff.js to create a patch
+                const diffPatch = Diff.createTwoFilesPatch('original.tex', 'formatted.tex', original, formatted, '', '');
+                const configuration = { drawFileList: false, matching: 'lines', outputFormat: 'side-by-side' };
+
+                const diff2htmlUi = new Diff2HtmlUI(targetElement, diffPatch, configuration);
+                
+                diff2htmlUi.draw();
+                
+            }
+            
+            // Helper function to show error messages
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
