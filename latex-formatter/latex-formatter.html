@@ -290,6 +290,12 @@
             background-color: #95a5a6;
             cursor: not-allowed;
         }
+        #saveChangesBtn {
+            background-color: #3498db;
+        }
+        #saveChangesBtn:hover {
+            background-color: #2980b9;
+        }
     </style>
 </head>
 <body>
@@ -374,8 +380,11 @@
             </div>
             
             <div class="tab-content" id="formatted-content">
-                <button id="copyFormattedBtn" class="copy-button">Copy to Clipboard</button>
-                <textarea id="formattedOutput" readonly></textarea>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button id="copyFormattedBtn" class="copy-button">Copy to Clipboard</button>
+                    <button id="saveChangesBtn" class="copy-button">Save Changes</button>
+                </div>
+                <textarea id="formattedOutput"></textarea>
             </div>
             
             <div class="tab-content" id="original-content">
@@ -436,6 +445,7 @@
             const progressFill = document.getElementById('progressFill');
             const progressText = document.getElementById('progressText');
             const downloadAllBtn = document.getElementById('downloadAllBtn');
+            const saveChangesBtn = document.getElementById('saveChangesBtn');
 
             const files = [];
             let activeFileId = null;
@@ -595,6 +605,17 @@
 
             // Format All button click handler
             formatAllBtn.addEventListener('click', formatAllFiles);
+
+            // Save Changes button click handler
+            saveChangesBtn.addEventListener('click', saveFormattedChanges);
+
+            // Add keyboard shortcut for saving (Ctrl+S)
+            formattedOutput.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault(); // Prevent browser save dialog
+                    saveFormattedChanges();
+                }
+            });
 
             // Clear All button click handler
             clearAllBtn.addEventListener('click', () => {
@@ -779,6 +800,12 @@
             }
 
             function setActiveFile(fileId) {
+                if (activeFileId) {
+                    const currentFile = files.find(f => f.id === activeFileId);
+                    if (currentFile && formattedOutput.value) {
+                        currentFile.formattedContent = formattedOutput.value;
+                    }
+                }
                 activeFileId = fileId;
                 const file = files.find(f => f.id === fileId);
                 
@@ -974,6 +1001,45 @@
                     showError(`Error creating download: ${error.message}`);
                     console.error(error);
                 }
+            }
+            // Function to save manual edits back to the file object
+            function saveFormattedChanges() {
+                if (!activeFileId) {
+                    showError("No active file to save changes to");
+                    return;
+                }
+                
+                const file = files.find(f => f.id === activeFileId);
+                if (!file) return;
+                
+                const newContent = formattedOutput.value;
+                
+                // Update the file object
+                file.formattedContent = newContent;
+                
+                // If file wasn't already processed, mark it as processed
+                if (file.status !== 'processed') {
+                    file.status = 'processed';
+                    renderFileList();
+                }
+                
+                // Update the diff view
+                generateDiff(file.originalContent, newContent);
+                
+                // Show confirmation message
+                const savedMessage = document.createElement('div');
+                savedMessage.textContent = 'Changes saved!';
+                savedMessage.style.color = '#27ae60';
+                savedMessage.style.padding = '5px';
+                savedMessage.style.marginBottom = '10px';
+                
+                const parent = saveChangesBtn.parentElement;
+                parent.appendChild(savedMessage);
+                
+                // Remove the message after a delay
+                setTimeout(() => {
+                    parent.removeChild(savedMessage);
+                }, 2000);
             }
         });
     </script>
