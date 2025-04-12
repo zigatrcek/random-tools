@@ -147,9 +147,61 @@
             cursor: pointer;
             margin-bottom: 10px;
         }
+        .settings-button {
+            background-color: #f39c12;
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            z-index: 1000;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 800px;
+            border-radius: 8px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
+    <button id="settingsBtn" class="settings-button">Settings</button>
+    
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Formatting Instructions</h2>
+            <p>Customize the formatting guidelines used by the AI:</p>
+            <textarea id="formatInstructions" rows="15" style="width: 100%; margin-bottom: 15px;"></textarea>
+            <button id="saveSettingsBtn">Save Settings</button>
+            <button id="resetSettingsBtn">Reset to Default</button>
+        </div>
+    </div>
+    
     <h1>LaTeX Formatter</h1>
     
     <div class="container">
@@ -209,8 +261,8 @@
     </div>
 
     <script>
-        // Format guidelines
-        const formatGuidelines = `
+        // Default format guidelines
+        const DEFAULT_FORMAT_GUIDELINES = `
         Glavno pravilo - spoštuj formatiranje, ki je že v besedilu. Ne dodajaj razlag, samo formatiraj.
         Tekst je lahko hkrati poudarjen in ležeč.
 | Syntax | Description |
@@ -241,9 +293,15 @@
             const tabContents = document.querySelectorAll('.tab-content');
             const copyFormattedBtn = document.getElementById('copyFormattedBtn');
             const copyOriginalBtn = document.getElementById('copyOriginalBtn');
-
             const targetElement = document.getElementById('diffOutput');
-
+            
+            // Settings modal elements
+            const settingsBtn = document.getElementById('settingsBtn');
+            const settingsModal = document.getElementById('settingsModal');
+            const closeBtn = document.querySelector('.close');
+            const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+            const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+            const formatInstructions = document.getElementById('formatInstructions');
             
             // Load API key from localStorage if available
             if (localStorage.getItem('geminiApiKey')) {
@@ -254,6 +312,39 @@
             if (localStorage.getItem('geminiModel')) {
                 modelSelect.value = localStorage.getItem('geminiModel');
             }
+            
+            // Load format instructions from localStorage or use default
+            if (localStorage.getItem('formatInstructions')) {
+                formatInstructions.value = localStorage.getItem('formatInstructions');
+            } else {
+                formatInstructions.value = DEFAULT_FORMAT_GUIDELINES;
+                localStorage.setItem('formatInstructions', DEFAULT_FORMAT_GUIDELINES);
+            }
+            
+            // Settings modal functionality
+            settingsBtn.addEventListener('click', () => {
+                settingsModal.style.display = 'block';
+            });
+            
+            closeBtn.addEventListener('click', () => {
+                settingsModal.style.display = 'none';
+            });
+            
+            window.addEventListener('click', (event) => {
+                if (event.target === settingsModal) {
+                    settingsModal.style.display = 'none';
+                }
+            });
+            
+            saveSettingsBtn.addEventListener('click', () => {
+                localStorage.setItem('formatInstructions', formatInstructions.value);
+                settingsModal.style.display = 'none';
+            });
+            
+            resetSettingsBtn.addEventListener('click', () => {
+                formatInstructions.value = DEFAULT_FORMAT_GUIDELINES;
+                localStorage.setItem('formatInstructions', DEFAULT_FORMAT_GUIDELINES);
+            });
 
             // Copy buttons
             copyFormattedBtn.addEventListener('click', () => {
@@ -365,16 +456,19 @@
             async function formatWithGemini(content, apiKey, model) {
                 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
                 
+                // Get current formatting instructions from localStorage
+                const formattingGuide = localStorage.getItem('formatInstructions') || DEFAULT_FORMAT_GUIDELINES;
+                
                 const prompt = `
                 Please format the following LaTeX content according to these guidelines:
                 
-                ${formatGuidelines}
+                ${formattingGuide}
                 
                 Here is the LaTeX content to format:
                 
                 ${content}
                 
-                Please provide only the formatted LaTeX content without any additional explanations or comments. Do not include code blocks or any other formatting. Just provide the plain LaTeX code.
+                Please provide only the formatted LaTeX content without any additional explanations or comments. Do not wrap the output in a codeblock. Just provide the plain LaTeX code.
                 Do not modify the content and add explanations for terms - only format it.
                 Do not remove emphasts - text can be emphasized and italicized at the same time.
                 Make sure to follow the guidelines strictly.
